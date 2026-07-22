@@ -5,8 +5,9 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+# 给予原生 git 提交写入权限
 permissions:
-  contents: write # 给予 keepalive-workflow 提交权限
+  contents: write
 
 jobs:
   check-and-control:
@@ -30,13 +31,27 @@ jobs:
         env:
           ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID || 'cn-hongkong' }}
           ALIYUN_ECS_INSTANCE_ID: ${{ secrets.ALIYUN_ECS_INSTANCE_ID }}
-          TRAFFIC_THRESHOLD_GB: '180'
+          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID || 'cn-hongkong' }}
+          TRAFFIC_THRESHOLD_GB: ${{ vars.TRAFFIC_THRESHOLD_GB || '180' }}
         run: python main.py
 
-      # 🛡️ 防封禁 & 防暂停：每 30 天才自动 Commit 一次代码，保持仓库活跃，绝不刷屏
-      - name: 保持工作流长期激活 (Keepalive)
-        uses: gautamkrishnar/keepalive-workflow@v2
-        with:
-          time_elapsed: 30 # 30 天没有代码提交时才触发 1 次提交
+      - name: 自动保活
+        run: |
+          # 计算上一次 commit 距离现在的天数
+          LAST_COMMIT_SEC=$(git log -1 --format=%ct)
+          NOW_SEC=$(date +%s)
+          DAYS_DIFF=$(( (NOW_SEC - LAST_COMMIT_SEC) / 86400 ))
+
+          # 距离上次提交超过 30 天时，自动 push 1 次保持活跃
+          if [ $DAYS_DIFF -ge 30 ]; then
+            echo "检测到已有 $DAYS_DIFF 天未更新代码，执行全自动保活..."
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            date > .keepalive
+            git add .keepalive
+            git commit -m "chore: auto keepalive [skip ci]"
+            git push
+          else
+            echo "距离上次提交仅 $DAYS_DIFF 天，暂无保活动作。"
+          fi
