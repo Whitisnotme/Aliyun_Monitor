@@ -1,4 +1,4 @@
-name: Aliyun ECS Traffic Guard
+name: ECS Monitor
 
 on:
   schedule:
