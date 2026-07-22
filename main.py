@@ -40,6 +40,21 @@ except Exception as e:
     sys.exit(1)
 
 
+# ================== 日志增强：写入 GitHub Actions 报告页 ==================
+def write_github_summary(total_gb, threshold, status, action_msg):
+    summary_file = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_file:
+        try:
+            with open(summary_file, "a", encoding="utf-8") as f:
+                f.write("### 🛡️ 阿里云 ECS 流量监控面板\n")
+                f.write(f"- **当前总流量**: `{total_gb:.2f} GB` / `{threshold:.2f} GB`\n")
+                f.write(f"- **实例 ID**: `{ECS_INSTANCE_ID}`\n")
+                f.write(f"- **当前状态**: `{status}`\n")
+                f.write(f"- **执行结果**: {action_msg}\n")
+        except Exception as e:
+            logger.warning(f"写入 GitHub Summary 失败: {e}")
+
+
 # ================== 4. 查询当前总流量 ==================
 def get_total_traffic_gb(client):
     request = CommonRequest()
@@ -86,58 +101,66 @@ def get_ecs_status(client, instance_id):
         return None
 
 
-# ================== 6. 启动 ECS 实例 ==================
+# ================== 6. 启动/停止逻辑 ==================
 def ecs_start(client, instance_id):
     status = get_ecs_status(client, instance_id)
     if status == "Running":
-        logger.info(f"ECS 实例 {instance_id} 已经是运行状态，无需启动。")
-        return
+        msg = "🟢 实例已处于运行状态，无需重复启动"
+        logger.info(msg)
+        return status, msg
 
     try:
         request = StartInstancesRequest.StartInstancesRequest()
         request.set_InstanceIds([instance_id])
         request.set_accept_format("json")
-
-        response = client.do_action_with_exception(request)
-        logger.info(f"ECS 启动响应: {response.decode('utf-8')}")
+        client.do_action_with_exception(request)
+        msg = "🚀 流量未超标，已成功发送【启动】指令"
+        logger.info(msg)
+        return status, msg
     except Exception as e:
-        logger.error(f"启动 ECS 实例失败: {e}")
+        msg = f"❌ 启动失败: {e}"
+        logger.error(msg)
+        return status, msg
 
 
-# ================== 7. 停止 ECS 实例 ==================
 def ecs_stop(client, instance_id):
     status = get_ecs_status(client, instance_id)
     if status == "Stopped":
-        logger.info(f"ECS 实例 {instance_id} 已经是停止状态，无需再次停止。")
-        return
+        msg = "🔴 实例已处于停止状态，无需重复关机"
+        logger.info(msg)
+        return status, msg
 
     try:
         request = StopInstancesRequest.StopInstancesRequest()
         request.set_InstanceIds([instance_id])
         request.set_ForceStop(False)
         request.set_accept_format("json")
-
-        response = client.do_action_with_exception(request)
-        logger.info(f"ECS 停止响应: {response.decode('utf-8')}")
+        client.do_action_with_exception(request)
+        msg = "🛑 流量超标！已成功发送【关机】指令"
+        logger.info(msg)
+        return status, msg
     except Exception as e:
-        logger.error(f"停止 ECS 实例失败: {e}")
+        msg = f"❌ 关机失败: {e}"
+        logger.error(msg)
+        return status, msg
 
 
-# ================== 8. 主流程 ==================
+# ================== 7. 主流程 ==================
 def main():
     total_gb = get_total_traffic_gb(client)
 
     if total_gb < TRAFFIC_THRESHOLD_GB:
         logger.info(
-            f"流量 {total_gb:.2f} GB < 阈值 {TRAFFIC_THRESHOLD_GB} GB，尝试启动 ECS"
+            f"流量 {total_gb:.2f} GB < 阈值 {TRAFFIC_THRESHOLD_GB} GB，检查启动状态"
         )
-        ecs_start(client, ECS_INSTANCE_ID)
+        status, msg = ecs_start(client, ECS_INSTANCE_ID)
     else:
         logger.info(
-            f"流量 {total_gb:.2f} GB ≥ 阈值 {TRAFFIC_THRESHOLD_GB} GB，尝试停止 ECS"
+            f"流量 {total_gb:.2f} GB ≥ 阈值 {TRAFFIC_THRESHOLD_GB} GB，检查停止状态"
         )
-        ecs_stop(client, ECS_INSTANCE_ID)
+        status, msg = ecs_stop(client, ECS_INSTANCE_ID)
 
+    write_github_summary(total_gb, TRAFFIC_THRESHOLD_GB, status, msg)
     logger.info("脚本执行完毕。")
 
 
