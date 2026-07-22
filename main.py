@@ -40,13 +40,12 @@ except Exception as e:
     sys.exit(1)
 
 
-# ================== 日志增强：写入 GitHub Actions 报告页 ==================
 def write_github_summary(total_gb, threshold, status, action_msg):
     summary_file = os.getenv("GITHUB_STEP_SUMMARY")
     if summary_file:
         try:
             with open(summary_file, "a", encoding="utf-8") as f:
-                f.write("### 🛡️ 阿里云 ECS 流量监控面板\n")
+                f.write("### 🛡 阿里云 ECS 流量监控面板\n")
                 f.write(f"- **当前总流量**: `{total_gb:.2f} GB` / `{threshold:.2f} GB`\n")
                 f.write(f"- **实例 ID**: `{ECS_INSTANCE_ID}`\n")
                 f.write(f"- **当前状态**: `{status}`\n")
@@ -55,29 +54,41 @@ def write_github_summary(total_gb, threshold, status, action_msg):
             logger.warning(f"写入 GitHub Summary 失败: {e}")
 
 
-# ================== 4. 查询当前总流量 ==================
+# ================== 4. 查询当前总流量（支持分页） ==================
 def get_total_traffic_gb(client):
-    request = CommonRequest()
-    request.set_domain("cdt.aliyuncs.com")
-    request.set_version("2021-08-13")
-    request.set_action_name("ListCdtInternetTraffic")
-    request.set_method("POST")
+    total_bytes = 0
+    next_token = None
+    max_results = 100
 
-    try:
-        response = client.do_action_with_exception(request)
-        response_json = json.loads(response.decode("utf-8"))
+    while True:
+        request = CommonRequest()
+        request.set_domain("cdt.aliyuncs.com")
+        request.set_version("2021-08-13")
+        request.set_action_name("ListCdtInternetTraffic")
+        request.set_method("POST")
+        request.add_query_param("MaxResults", max_results)
+        if next_token:
+            request.add_query_param("NextToken", next_token)
 
-        total_bytes = sum(
-            d.get("Traffic", 0)
-            for d in response_json.get("TrafficDetails", [])
-        )
-        total_gb = total_bytes / (1024**3)
+        try:
+            response = client.do_action_with_exception(request)
+            response_json = json.loads(response.decode("utf-8"))
 
-        logger.info(f"当前总互联网流量: {total_gb:.2f} GB")
-        return total_gb
-    except Exception as e:
-        logger.error(f"获取 CDT 流量失败: {e}")
-        sys.exit(1)
+            for d in response_json.get("TrafficDetails", []):
+                total_bytes += d.get("Traffic", 0)
+
+            next_token = response_json.get("NextToken")
+            if not next_token:
+                break
+            logger.info("检测到分页数据，继续拉取...")
+
+        except Exception as e:
+            logger.error(f"获取 CDT 流量失败: {e}")
+            sys.exit(1)
+
+    total_gb = total_bytes / (1024**3)
+    logger.info(f"当前总互联网流量: {total_gb:.2f} GB")
+    return total_gb
 
 
 # ================== 5. 查询 ECS 实例状态 ==================
