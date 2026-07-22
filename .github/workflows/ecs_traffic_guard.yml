@@ -2,9 +2,11 @@ name: Aliyun ECS Traffic Guard
 
 on:
   schedule:
-    # UTC 时间每 30 分钟运行一次 (每小时的第 0 和 30 分钟)
-    - cron: '0,30 * * * *'
-  workflow_dispatch: # 允许在 GitHub Actions 界面手动点击运行
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write # 给予 keepalive-workflow 提交权限
 
 jobs:
   check-and-control:
@@ -32,3 +34,9 @@ jobs:
           ALIYUN_ECS_INSTANCE_ID: ${{ secrets.ALIYUN_ECS_INSTANCE_ID }}
           TRAFFIC_THRESHOLD_GB: '180'
         run: python main.py
+
+      # 🛡️ 防封禁 & 防暂停：每 30 天才自动 Commit 一次代码，保持仓库活跃，绝不刷屏
+      - name: 保持工作流长期激活 (Keepalive)
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          time_elapsed: 30 # 30 天没有代码提交时才触发 1 次提交
