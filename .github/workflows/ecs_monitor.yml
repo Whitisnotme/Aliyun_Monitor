@@ -2,7 +2,7 @@ name: ECS Monitor
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 # 给予原生 git 提交写入权限
