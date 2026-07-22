@@ -2,10 +2,9 @@ name: ECS Monitor
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
-# 给予原生 git 提交写入权限
 permissions:
   contents: write
 
@@ -15,10 +14,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: 配置 Python 环境
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -38,12 +37,10 @@ jobs:
 
       - name: 自动保活
         run: |
-          # 计算上一次 commit 距离现在的天数
           LAST_COMMIT_SEC=$(git log -1 --format=%ct)
           NOW_SEC=$(date +%s)
           DAYS_DIFF=$(( (NOW_SEC - LAST_COMMIT_SEC) / 86400 ))
 
-          # 距离上次提交超过 30 天时，自动 push 1 次保持活跃
           if [ $DAYS_DIFF -ge 30 ]; then
             echo "检测到已有 $DAYS_DIFF 天未更新代码，执行全自动保活..."
             git config user.name "github-actions[bot]"
@@ -51,7 +48,7 @@ jobs:
             date > .keepalive
             git add .keepalive
             git commit -m "chore: auto keepalive [skip ci]"
-            git push
+            git push origin HEAD:${GITHUB_REF_NAME}
           else
             echo "距离上次提交仅 $DAYS_DIFF 天，暂无保活动作。"
           fi
